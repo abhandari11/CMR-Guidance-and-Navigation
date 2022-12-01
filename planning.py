@@ -267,27 +267,6 @@ class CmrPlanning():
         lon2 = math.degrees(lon2)
         return (lat2, lon2)
 
-    def clicked_draw_grid(self):
-        """
-        FOR NOW, JUST DOING ONE LINE.
-
-        Calculates the coordinates of the grid lines.
-
-        Returns
-        -------
-        None.
-
-        """
-        grid_points = []
-        self.grid_spacing = float(self.lineEdit_grid_spacing.text())
-        self.start_lat = float(self.lineEdit_start_lat.text())
-        self.start_lon = float(self.lineEdit_start_lon.text())
-        self.end_lat = float(self.lineEdit_end_lat.text())
-        self.end_lon = float(self.lineEdit_end_lon.text())
-
-        grid_points.append((self.start_lat, self.start_lon))
-        grid_points.append((self.end_lat, self.end_lon))
-
 
     def set_default_values(self):
         self.grid_spacing = 100

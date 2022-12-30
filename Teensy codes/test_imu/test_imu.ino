@@ -18,6 +18,7 @@ Wire.write(0);
 Wire.endTransmission(true);
 Serial.begin(9600);
 }
+
 void loop(){
 Wire.beginTransmission(MPU_addr);
 Wire.write(0x3B);
@@ -36,20 +37,4 @@ z= RAD_TO_DEG * (atan2(-yAng, -xAng)+PI);
 
 String out_angles = "X: " + String(x) + "\t \t Y: " + String(y) + "\t Z: " + String(z) + "\n";
 Serial.print(out_angles);
-
-delay(50);
 }
-
-
-//Serial.print("AngleX= ");
-//Serial.println(x);
-//Serial.print("")
-// 
-//Serial.print("AngleY= ");
-//Serial.println(y);
-// 
-//Serial.print("AngleZ= ");
-//Serial.println(z);
-//Serial.println("-----------------------------------------");
-//delay(400);
-//}

@@ -58,6 +58,9 @@
 #include "Wire.h"
 #endif
 
+#include "RunningAverage.h"
+
+
 // class default I2C address is 0x68
 // specific I2C addresses may be passed as a parameter here
 // AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
@@ -114,7 +117,7 @@ MPU6050 mpu;
 // components with gravity removed and adjusted for the world frame of
 // reference (yaw is relative to initial orientation, since no magnetometer
 // is present in this case). Could be quite handy in some cases.
-//#define OUTPUT_READABLE_WORLDACCEL
+// #define OUTPUT_READABLE_WORLDACCEL
 
 // uncomment "OUTPUT_TEAPOT" if you want output that matches the
 // format used for the InvenSense teapot demo
@@ -143,11 +146,15 @@ VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measure
 VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+bool first_loop;
+float old_aa[3];
+float old_gy[3];
 
 // packet structure for InvenSense teapot demo
 uint8_t teapotPacket[14] = { '$', 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, '\r', '\n' };
 
 
+RunningAverage run_avg(5);
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -195,7 +202,7 @@ void setup() {
   Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
 
   // wait for ready
-  Serial.println(F("\nSend any character to begin DMP programming and demo: "));
+  Serial.println("\nSend any character to begin DMP programming and demo: ");
   while (Serial.available() && Serial.read()); // empty buffer
   while (!Serial.available());                 // wait for data
   while (Serial.available() && Serial.read()); // empty buffer again
@@ -204,13 +211,19 @@ void setup() {
   Serial.println(F("Initializing DMP..."));
   devStatus = mpu.dmpInitialize();
 
-  // supply your own gyro offsets here, scaled for min sensitivity
-  mpu.setXGyroOffset(51);
-  mpu.setYGyroOffset(8);
-  mpu.setZGyroOffset(21);
-  mpu.setXAccelOffset(1150);
-  mpu.setYAccelOffset(-50);
-  mpu.setZAccelOffset(1060);
+  mpu.setFullScaleGyroRange(MPU6050_IMU::MPU6050_GYRO_FS_250);
+  mpu.setFullScaleAccelRange(MPU6050_IMU::MPU6050_ACCEL_FS_2);
+  
+  // supply your own gyro offsets here
+  mpu.setXGyroOffset(-1);
+  mpu.setYGyroOffset(1.5);
+  mpu.setZGyroOffset(5);
+  mpu.setXAccelOffset(14415);
+  mpu.setYAccelOffset(-2225);
+  mpu.setZAccelOffset(-12789);
+  Serial.print("right after setting the offsets...");
+  mpu.PrintActiveOffsets(); 
+
   // make sure it worked (returns 0 if so)
   if (devStatus == 0) {
     // Calibration Time: generate offsets and calibrate our MPU6050
@@ -245,10 +258,18 @@ void setup() {
     Serial.println(F(")"));
   }
 
+  // wait for ready
+  Serial.println(F("\nSend any character to begin the loop: "));
+  while (Serial.available() && Serial.read()); // empty buffer
+  while (!Serial.available());                 // wait for data
+  while (Serial.available() && Serial.read()); // empty buffer again
+
   // configure LED for output
   pinMode(LED_PIN, OUTPUT);
-}
 
+  // clearing running average
+  run_avg.clear();
+}
 
 
 // ================================================================
@@ -258,6 +279,7 @@ void setup() {
 void loop() {
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
+
   // read a packet from FIFO
   if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer)) { // Get the Latest packet 
 
@@ -291,6 +313,7 @@ void loop() {
     mpu.dmpGetQuaternion(&q, fifoBuffer);
     mpu.dmpGetGravity(&gravity, &q);
     mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+
     Serial.print("ypr\t");
     Serial.print(ypr[0] * 180 / M_PI);
     Serial.print("\t");
@@ -298,20 +321,49 @@ void loop() {
     Serial.print("\t");
     Serial.print(ypr[2] * 180 / M_PI);
     /*
-      mpu.dmpGetAccel(&aa, fifoBuffer);
-      Serial.print("\tRaw Accl XYZ\t");
-      Serial.print(aa.x);
-      Serial.print("\t");
-      Serial.print(aa.y);
-      Serial.print("\t");
-      Serial.print(aa.z);
-      mpu.dmpGetGyro(&gy, fifoBuffer);
-      Serial.print("\tRaw Gyro XYZ\t");
-      Serial.print(gy.x);
-      Serial.print("\t");
-      Serial.print(gy.y);
-      Serial.print("\t");
-      Serial.print(gy.z);
+    mpu.dmpGetAccel(&aa, fifoBuffer);
+    Serial.print("\tRaw Accel XYZ\t");
+    Serial.print(aa.x);
+    Serial.print("\t");
+    Serial.print(aa.y);
+    Serial.print("\t");
+    Serial.println(aa.z);
+    mpu.dmpGetGyro(&gy, fifoBuffer);
+    Serial.print("\tRaw Gyro XYZ\t");
+    Serial.print(gy.x);
+    Serial.print("\t");
+    Serial.print(gy.y);
+    Serial.print("\t");
+    Serial.println(gy.z);
+
+    // Calculation of running averages
+    old_aa[0] = (old_aa[0] + aa.x) / 2;
+    old_aa[1] = (old_aa[1] + aa.y) / 2;
+    old_aa[2] = (old_aa[2] + aa.z) / 2;
+
+    old_gy[0] = (old_gy[0] + gy.x) / 2;
+    old_gy[1] = (old_gy[1] + gy.y) / 2;
+    old_gy[2] = (old_gy[2] + gy.z) / 2;
+
+    // running average library
+    run_avg.addValue(aa.x);
+    Serial.print("\tRunning average accel X... \t");
+    Serial.println(run_avg.getAverage(), 2);
+    */
+
+    /*
+    Serial.print("\tRunning Average Accl XYZ\t");
+    Serial.print(old_aa[0]);
+    Serial.print("\t");
+    Serial.print(old_aa[1]);
+    Serial.print("\t");
+    Serial.println(old_aa[2]);
+    Serial.print("\tRunning average Gyro XYZ\t");
+    Serial.print(old_gy[0]);
+    Serial.print("\t");
+    Serial.print(old_gy[1]);
+    Serial.print("\t");
+    Serial.println(old_gy[2]);
     */
     Serial.println();
 
@@ -366,3 +418,7 @@ void loop() {
     digitalWrite(LED_PIN, blinkState);
   }
 }
+
+
+
+
